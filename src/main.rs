@@ -4,17 +4,16 @@ use std::fs;
 use std::io::Read;
 use std::time::Instant;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum Symbol {
     PLUS,
     MINUS,
-    LEFT,
-    RIGHT,
+    LEFT(usize),
+    RIGHT(usize),
     PUT,
     TAKE,
     START(usize),
     END(usize),
-    NONE,
 }
 
 fn main() {
@@ -25,36 +24,78 @@ fn main() {
     println!("----Read file, found contents to be:----\n{}\n", contents);
     println!("----TETANUS----");
 
-    println!("\nRunning things the old way...\n");
-    let mut start = Instant::now();
-    old_interpret(contents.clone());
-    println!("\nOld way took: {:.2?}\n", start.elapsed());
-
-    println!("\nRunning things the cool, new way...\n");
-    start = Instant::now();
+    let start = Instant::now();
     let ops = preprocess(contents);
+    println!("Preprocessed ops: {:?}", ops);
     processed_interpret(ops);
-    println!("\nNew way took: {:.2?}\n", start.elapsed());
 
     println!("\n----Interpreter complete----");
+    println!("Interpreting took: {:.2?}", start.elapsed());
 }
 
 fn preprocess(code: String) -> Vec<Symbol> {
     let mut ops: Vec<Symbol> = Vec::new();
     let mut opens: VecDeque<usize> = VecDeque::new();
 
+    let bytes: Vec<char> = code.chars().collect();
+    let mut i = 0;
+
     let mut index: usize = 0;
-    for c in code.chars() {
-        let op = match c {
-            '>' => Symbol::RIGHT,
-            '<' => Symbol::LEFT,
-            '+' => Symbol::PLUS,
-            '-' => Symbol::MINUS,
-            '.' => Symbol::PUT,
-            ',' => Symbol::TAKE,
+
+    while i < bytes.len() {
+        match bytes[i] {
+            '>' => {
+                if index > 0 {
+                    match ops[index - 1] {
+                        Symbol::RIGHT(count) => {
+                            ops[index - 1] = Symbol::RIGHT(count + 1);
+                        }
+                        _ => {
+                            ops.push(Symbol::RIGHT(1));
+                            index += 1;
+                        }
+                    }
+                } else {
+                    ops.push(Symbol::RIGHT(1));
+                    index += 1;
+                }
+            }
+            '<' => {
+                if index > 0 {
+                    match ops[index - 1] {
+                        Symbol::LEFT(count) => {
+                            ops[index - 1] = Symbol::LEFT(count + 1);
+                        }
+                        _ => {
+                            ops.push(Symbol::LEFT(1));
+                            index += 1;
+                        }
+                    }
+                } else {
+                    ops.push(Symbol::LEFT(1));
+                    index += 1;
+                }
+            }
+            '+' => {
+                ops.push(Symbol::PLUS);
+                index += 1;
+            }
+            '-' => {
+                ops.push(Symbol::MINUS);
+                index += 1;
+            }
+            '.' => {
+                ops.push(Symbol::PUT);
+                index += 1;
+            }
+            ',' => {
+                ops.push(Symbol::TAKE);
+                index += 1;
+            }
             '[' => {
                 opens.push_back(index);
-                Symbol::START(0)
+                ops.push(Symbol::START(0));
+                index += 1;
             }
             ']' => {
                 if opens.len() == 0 {
@@ -63,17 +104,14 @@ fn preprocess(code: String) -> Vec<Symbol> {
 
                 let last_open = opens.pop_back().unwrap();
                 ops[last_open] = Symbol::START(index);
-                Symbol::END(last_open)
+                ops.push(Symbol::END(last_open));
+                index += 1;
             }
-            _ => Symbol::NONE, // comment character
+            _ => {} // comment character
         };
 
-        if op != Symbol::NONE {
-            ops.push(op);
-            index += 1;
-        }
+        i += 1;
     }
-
     return ops;
 }
 
@@ -88,6 +126,7 @@ fn processed_interpret(ops: Vec<Symbol>) {
     let mut pc: usize = 0;
 
     while pc < ops.len() {
+        //println!("Processing op {:?}", ops[pc]);
         match ops[pc] {
             Symbol::PLUS => {
                 if data[data_index] == 255 {
@@ -103,21 +142,30 @@ fn processed_interpret(ops: Vec<Symbol>) {
                     data[data_index] -= 1;
                 }
             }
-            Symbol::LEFT => {
+            Symbol::LEFT(count) => {
                 // check if we're going to underflow initialized memory
-                if data_index == 0 {
-                    data.insert(0, 0);
+                if count > data_index {
+                    // need to add more cells to the left
+                    for _ in 0..(count - data_index) {
+                        data.insert(0, 0);
+                    }
+                    data_index = 0;
                 } else {
-                    data_index -= 1;
+                    data_index -= count;
                 }
             }
-            Symbol::RIGHT => {
+            Symbol::RIGHT(count) => {
                 // check if we're about to exceed the length of initialized memory
+                if data_index + count >= data.len() {
+                    for _ in 0..(data.len() - data_index + (count - 1)) {
+                        data.push(0);
+                    }
+                } else {
+                    data_index += count;
+                }
                 if data_index == data.len() - 1 {
                     data.push(0);
                 }
-
-                data_index += 1;
             }
             Symbol::PUT => print!("{}", data[data_index] as char),
             Symbol::TAKE => {
@@ -138,13 +186,13 @@ fn processed_interpret(ops: Vec<Symbol>) {
                     pc = index;
                 }
             }
-            Symbol::NONE => (),
         }
 
         pc += 1;
     }
 }
 
+#[allow(dead_code)]
 fn old_interpret(code: String) {
     // Start by intiializing the memory space, memory pointer, program counter, etc.
     // No one seems to agree what happens when the data pointer moves to the left of 0... I'm going to say that's
