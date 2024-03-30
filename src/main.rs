@@ -116,7 +116,7 @@ fn preprocess(code: String) -> Vec<Symbol> {
 }
 
 fn processed_interpret(ops: Vec<Symbol>) {
-    // Start by intiializing the memory space, memory pointer, program counter, etc.
+    // Start by intializing the memory space, memory pointer, program counter, etc.
     // No one seems to agree what happens when the data pointer moves to the left of 0... I'm going to say that's
     // fine and just add a cell wherever it ends up
 
@@ -126,7 +126,7 @@ fn processed_interpret(ops: Vec<Symbol>) {
     let mut pc: usize = 0;
 
     while pc < ops.len() {
-        //println!("Processing op {:?}", ops[pc]);
+        println!("Processing op {:?}", ops[pc]);
         match ops[pc] {
             Symbol::PLUS => {
                 if data[data_index] == 255 {
